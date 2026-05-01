@@ -1,0 +1,49 @@
+{
+  "name": "@openclaw/webex",
+  "version": "2026.4.30",
+  "description": "OpenClaw Webex channel plugin",
+  "type": "module",
+  "dependencies": {
+    "typebox": "1.1.34",
+    "webex": "^3.5.0"
+  },
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*",
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.30"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "webex",
+      "label": "Webex",
+      "selectionLabel": "Webex (WebSocket Bot)",
+      "docsPath": "/channels/webex",
+      "docsLabel": "webex",
+      "blurb": "Cisco Webex rooms via outbound WebSocket — works behind NAT and in private subnets.",
+      "aliases": [
+        "cisco-webex"
+      ],
+      "order": 65,
+      "doctorCapabilities": {
+        "dmAllowFromMode": "topOnly",
+        "groupModel": "allowlist",
+        "groupAllowFromFallbackToAllowFrom": true,
+        "warnOnEmptyGroupSenderAllowlist": false
+      }
+    },
+    "bundle": {
+      "stageRuntimeDependencies": true
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "webex",
+  "activation": {
+    "onStartup": false
+  },
+  "channels": ["webex"],
+  "channelEnvVars": {
+    "webex": ["WEBEX_BOT_TOKEN"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

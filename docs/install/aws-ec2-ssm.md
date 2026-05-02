@@ -57,8 +57,8 @@ docker info
 ## Step 2 — Clone the repo
 
 ```bash
-git clone https://github.com/openclaw/openclaw.git
-cd openclaw
+git clone https://github.com/sntilak1/runtime_agent.git
+cd runtime_agent
 ```
 
 ---

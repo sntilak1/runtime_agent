@@ -100,6 +100,60 @@ environment:
 
 ---
 
+## Step 3b — Mount a host directory for persistent storage
+
+By default `docker-compose.yml` stores OpenClaw state in Docker named volumes,
+which are lost if you remove the containers. Mounting host directories instead
+keeps all config, sessions, and agent workspaces on the EC2 filesystem so they
+survive container rebuilds and are easy to back up.
+
+**What each directory holds**
+
+| Directory                | Contents                                                     |
+| ------------------------ | ------------------------------------------------------------ |
+| `OPENCLAW_CONFIG_DIR`    | `openclaw.json` config, credentials, device pairings, logs   |
+| `OPENCLAW_WORKSPACE_DIR` | Agent workspaces — files the agent reads/writes during tasks |
+
+**Create the host directories and set permissions**
+
+The container runs as the `node` user (UID 1000). The host directories must be
+owned by the same UID:
+
+```bash
+sudo mkdir -p /opt/openclaw/config /opt/openclaw/workspace
+sudo chown -R 1000:1000 /opt/openclaw
+```
+
+**Add the paths to `.env`**
+
+Append to the `.env` file you created above:
+
+```bash
+cat >> .env << 'EOF'
+
+# Host directories mounted into the container for persistent state
+OPENCLAW_CONFIG_DIR=/opt/openclaw/config
+OPENCLAW_WORKSPACE_DIR=/opt/openclaw/workspace
+EOF
+```
+
+`docker-compose.yml` already reads these variables:
+
+```yaml
+volumes:
+  - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
+  - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
+```
+
+No further edits to `docker-compose.yml` are needed.
+
+> **Tip:** Use an EBS volume mounted at `/opt/openclaw` if you want storage that
+> persists independently of the EC2 instance lifecycle. Format and mount it
+> before running `mkdir` above, then add it to `/etc/fstab` for automatic
+> remount on reboot.
+
+---
+
 ## Step 4 — Build and start the container
 
 The first build downloads Node.js packages and compiles the TypeScript source. On a `t3.medium` this takes around 10–15 minutes.

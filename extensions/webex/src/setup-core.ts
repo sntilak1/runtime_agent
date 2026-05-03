@@ -1,24 +1,25 @@
-import type { ChannelSetupAdapter } from "openclaw/plugin-sdk/channel-contract";
-import { probeWebex } from "./probe.js";
-import { resolveWebexToken } from "./token.js";
+import {
+  createPatchedAccountSetupAdapter,
+  createSetupInputPresenceValidator,
+} from "openclaw/plugin-sdk/setup-runtime";
 
-export const webexSetupAdapter: ChannelSetupAdapter = {
-  async isConfigured({ cfg }) {
-    const { token } = resolveWebexToken(cfg);
-    return Boolean(token);
+const channel = "webex" as const;
+
+export const webexSetupAdapter = createPatchedAccountSetupAdapter({
+  channelKey: channel,
+  validateInput: createSetupInputPresenceValidator({
+    defaultAccountOnlyEnvError:
+      "WEBEX_BOT_TOKEN env var can only be used for the default account.",
+    whenNotUseEnv: [
+      {
+        someOf: ["botToken"],
+        message: "Webex requires --bot-token.",
+      },
+    ],
+  }),
+  buildPatch: (input) => {
+    if (input.useEnv) return {};
+    const botToken = input.botToken?.trim();
+    return botToken ? { botToken } : {};
   },
-  async validate({ cfg }) {
-    const { token } = resolveWebexToken(cfg);
-    if (!token) {
-      return {
-        ok: false,
-        error: "No bot token found. Set channels.webex.botToken or WEBEX_BOT_TOKEN.",
-      };
-    }
-    const probe = await probeWebex(token);
-    if (!probe.ok) {
-      return { ok: false, error: probe.error ?? "Token validation failed." };
-    }
-    return { ok: true };
-  },
-};
+});

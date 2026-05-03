@@ -28,6 +28,7 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
+      - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}/extensions:/home/node/.openclaw/extensions
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/runtime-CJxvnR47.js:/app/dist/runtime-CJxvnR47.js:ro
@@ -99,6 +100,7 @@ services:
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
+      - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}/extensions:/home/node/.openclaw/extensions
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro

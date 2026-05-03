@@ -130,6 +130,7 @@ import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./
 import { resolvePluginCacheInputs } from "./roots.js";
 import {
   getActivePluginRegistry,
+  getActivePluginRegistryCoreGatewayMethodNames,
   getActivePluginRegistryKey,
   getActivePluginRuntimeSubagentMode,
   recordImportedPluginId,
@@ -840,6 +841,7 @@ function resolvePluginLoadCacheContext(options: PluginLoadOptions = {}) {
     shouldLoadModules: options.loadModules !== false,
     shouldInstallBundledRuntimeDeps,
     runtimeSubagentMode,
+    coreGatewayMethodNames,
     installRecords,
     cacheKey,
   };
@@ -937,6 +939,22 @@ function getCompatibleActivePluginRegistry(
         return activeRegistry;
       }
     }
+  }
+  // If the active registry is the gateway startup registry (gateway-bindable mode +
+  // non-empty gateway method names) and this is a plain runtime request with no explicit
+  // plugin scope or subagent mode override, the gateway registry is a superset of what
+  // the runtime request needs. Return it directly to avoid a full jiti reload on every
+  // message turn.
+  const activeSubagentMode = getActivePluginRuntimeSubagentMode();
+  const activeGatewayMethodNames = getActivePluginRegistryCoreGatewayMethodNames();
+  if (
+    activeSubagentMode === "gateway-bindable" &&
+    activeGatewayMethodNames.length > 0 &&
+    loadContext.coreGatewayMethodNames.length === 0 &&
+    loadContext.runtimeSubagentMode !== "explicit" &&
+    !options.onlyPluginIds
+  ) {
+    return activeRegistry;
   }
   return undefined;
 }
@@ -1065,12 +1083,13 @@ function activatePluginRegistry(
   cacheKey: string,
   runtimeSubagentMode: "default" | "explicit" | "gateway-bindable",
   workspaceDir?: string,
+  coreGatewayMethodNames?: string[],
 ): void {
   const preserveGatewayHookRunner =
     runtimeSubagentMode === "default" &&
     getActivePluginRuntimeSubagentMode() === "gateway-bindable" &&
     getGlobalHookRunner() !== null;
-  setActivePluginRegistry(registry, cacheKey, runtimeSubagentMode, workspaceDir);
+  setActivePluginRegistry(registry, cacheKey, runtimeSubagentMode, workspaceDir, coreGatewayMethodNames);
   if (!preserveGatewayHookRunner) {
     initializeGlobalHookRunner(registry);
   }
@@ -1093,6 +1112,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     shouldInstallBundledRuntimeDeps,
     cacheKey,
     runtimeSubagentMode,
+    coreGatewayMethodNames,
     installRecords,
   } = resolvePluginLoadCacheContext(options);
   const logger = options.logger ?? defaultLogger();
@@ -1107,7 +1127,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       clearPluginInteractiveHandlers();
       clearDetachedTaskLifecycleRuntimeRegistration();
       clearMemoryPluginState();
-      activatePluginRegistry(emptyRegistry, cacheKey, runtimeSubagentMode, options.workspaceDir);
+      activatePluginRegistry(emptyRegistry, cacheKey, runtimeSubagentMode, options.workspaceDir, coreGatewayMethodNames);
     }
     return emptyRegistry;
   }
@@ -1136,6 +1156,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
           cacheKey,
           runtimeSubagentMode,
           options.workspaceDir,
+          coreGatewayMethodNames,
         );
       }
       return cached.registry;
@@ -2125,7 +2146,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       });
     }
     if (shouldActivate) {
-      activatePluginRegistry(registry, cacheKey, runtimeSubagentMode, options.workspaceDir);
+      activatePluginRegistry(registry, cacheKey, runtimeSubagentMode, options.workspaceDir, coreGatewayMethodNames);
     }
     return registry;
   } finally {

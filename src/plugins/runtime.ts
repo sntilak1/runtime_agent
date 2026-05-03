@@ -40,6 +40,7 @@ const state: RegistryState = (() => {
       key: null,
       workspaceDir: null,
       runtimeSubagentMode: "default",
+      coreGatewayMethodNames: [],
       importedPluginIds: new Set<string>(),
     };
     globalState[PLUGIN_REGISTRY_STATE] = registryState;
@@ -127,6 +128,7 @@ export function setActivePluginRegistry(
   cacheKey?: string,
   runtimeSubagentMode: "default" | "explicit" | "gateway-bindable" = "default",
   workspaceDir?: string,
+  coreGatewayMethodNames?: string[],
 ) {
   const previousRegistry = asPluginRegistry(state.activeRegistry);
   state.activeRegistry = registry;
@@ -136,6 +138,7 @@ export function setActivePluginRegistry(
   state.key = cacheKey ?? null;
   state.workspaceDir = workspaceDir ?? null;
   state.runtimeSubagentMode = runtimeSubagentMode;
+  state.coreGatewayMethodNames = coreGatewayMethodNames ?? [];
   syncPluginAgentEventBridge(registry);
   if (
     !previousRegistry ||
@@ -254,6 +257,10 @@ export function getActivePluginRegistryKey(): string | null {
 
 export function getActivePluginRuntimeSubagentMode(): "default" | "explicit" | "gateway-bindable" {
   return state.runtimeSubagentMode;
+}
+
+export function getActivePluginRegistryCoreGatewayMethodNames(): string[] {
+  return state.coreGatewayMethodNames;
 }
 
 export function getActivePluginRegistryVersion(): number {

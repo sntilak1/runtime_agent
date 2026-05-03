@@ -1,5 +1,6 @@
 node_modules
 **/node_modules/
+plugins.entries.amazon-bedrock.config.discovery.enabled
 .env
 docker-compose.override.yml
 docker-compose.extra.yml

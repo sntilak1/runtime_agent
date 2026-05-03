@@ -25,10 +25,16 @@ services:
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       OPENCLAW_PLUGIN_STAGE_DIR: /var/lib/openclaw/plugin-runtime-deps
       TZ: ${OPENCLAW_TZ:-UTC}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
+      - /opt/openclaw/dist-patches/runtime-CJxvnR47.js:/app/dist/runtime-CJxvnR47.js:ro
+      - /opt/openclaw/dist-patches/loader-Z63ex_FC.js:/app/dist/loader-Z63ex_FC.js:ro
+      - /opt/openclaw/dist-patches/provider-discovery.runtime-EMBoybwW.js:/app/dist/provider-discovery.runtime-EMBoybwW.js:ro
+      - /opt/openclaw/dist-patches/tools-EI4FEz3s.js:/app/dist/tools-EI4FEz3s.js:ro
+      - /opt/openclaw/dist-patches/plugin-registry-x83fIWqx.js:/app/dist/plugin-registry-x83fIWqx.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use

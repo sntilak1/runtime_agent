@@ -35,6 +35,8 @@ services:
       - /opt/openclaw/dist-patches/provider-discovery.runtime-EMBoybwW.js:/app/dist/provider-discovery.runtime-EMBoybwW.js:ro
       - /opt/openclaw/dist-patches/tools-EI4FEz3s.js:/app/dist/tools-EI4FEz3s.js:ro
       - /opt/openclaw/dist-patches/plugin-registry-x83fIWqx.js:/app/dist/plugin-registry-x83fIWqx.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -99,6 +101,8 @@ services:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
+      - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
     stdin_open: true
     tty: true
     init: true

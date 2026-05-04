@@ -38,6 +38,9 @@ services:
       - /opt/openclaw/dist-patches/plugin-registry-x83fIWqx.js:/app/dist/plugin-registry-x83fIWqx.js:ro
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-surface-gTeQSRo8.js:/app/dist/extensions/webex/setup-surface-gTeQSRo8.js:ro
+      - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-C4l1vqHv.js:/app/dist/extensions/webex/monitor-C4l1vqHv.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -105,6 +108,8 @@ services:
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-surface-gTeQSRo8.js:/app/dist/extensions/webex/setup-surface-gTeQSRo8.js:ro
+      - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
     stdin_open: true
     tty: true
     init: true

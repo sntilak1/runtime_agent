@@ -79,7 +79,7 @@ export const webexPlugin: ChannelPlugin<ResolvedWebexAccount, ProbeWebexResult> 
       capabilities: {
         chatTypes: ["direct", "group"],
         threads: false,
-        media: false,
+        media: true,
         polls: false,
       },
       reload: { configPrefixes: ["channels.webex"] },
@@ -208,7 +208,22 @@ export const webexPlugin: ChannelPlugin<ResolvedWebexAccount, ProbeWebexResult> 
               to: ctx.to,
               markdown: ctx.text,
             });
-            return { messageId: result.messageId };
+            return { channel: "webex" as const, messageId: result.messageId };
+          },
+        },
+        sendMedia: {
+          resolve: (runtime) => async (ctx) => {
+            const result = await runtime.sendMediaWebex({
+              cfg: ctx.cfg,
+              accountId: ctx.accountId,
+              to: ctx.to,
+              text: ctx.text || undefined,
+              mediaUrl: ctx.mediaUrl!,
+              mediaAccess: ctx.mediaAccess,
+              mediaLocalRoots: ctx.mediaLocalRoots,
+              mediaReadFile: ctx.mediaReadFile,
+            });
+            return { channel: "webex" as const, messageId: result.messageId };
           },
         },
       }),

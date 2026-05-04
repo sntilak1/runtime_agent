@@ -1,12 +1,13 @@
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
+import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
 import { waitForAbortSignal } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { resolveWebexConversationRoute } from "./conversation-route.js";
 import { getWebexRuntime } from "./runtime.js";
-import { sendMessageWebex } from "./send.js";
+import { isWebexAllowedMime, sendMessageWebex } from "./send.js";
 import { resolveWebexToken } from "./token.js";
 
 export type WebexInboundMessage = {
@@ -121,6 +122,61 @@ async function runWebexSession(opts: {
   await webex.messages.stopListening().catch(() => {});
 }
 
+// 50 MB inbound limit, matching the outbound cap.
+const WEBEX_INBOUND_MAX_BYTES = 50 * 1024 * 1024;
+
+type WebexMediaResult = {
+  path: string;
+  contentType?: string;
+};
+
+async function downloadWebexFile(url: string, token: string): Promise<WebexMediaResult | null> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+
+  const contentType = res.headers.get("content-type") ?? undefined;
+  if (!isWebexAllowedMime(contentType)) return null;
+
+  let buffer: Buffer;
+  try {
+    const bytes = await res.arrayBuffer();
+    if (bytes.byteLength > WEBEX_INBOUND_MAX_BYTES) return null;
+    buffer = Buffer.from(bytes);
+  } catch {
+    return null;
+  }
+
+  const contentDisposition = res.headers.get("content-disposition") ?? "";
+  const filenameMatch = /filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i.exec(contentDisposition);
+  const originalFilename = filenameMatch?.[1]?.trim() ?? undefined;
+
+  try {
+    const saved = await saveMediaBuffer(
+      buffer,
+      contentType,
+      "inbound",
+      WEBEX_INBOUND_MAX_BYTES,
+      originalFilename,
+    );
+    return { path: saved.path, contentType: saved.contentType };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveWebexInboundMedia(
+  fileUrls: string[],
+  token: string,
+): Promise<WebexMediaResult[]> {
+  const results = await Promise.all(fileUrls.map((url) => downloadWebexFile(url, token)));
+  return results.filter((r): r is WebexMediaResult => r !== null);
+}
+
 async function processWebexMessage(params: {
   cfg: OpenClawConfig;
   accountId: string;
@@ -142,6 +198,17 @@ async function processWebexMessage(params: {
   });
   if (!route) return;
 
+  const { token } = resolveWebexToken(cfg, { accountId });
+
+  let mediaResults: WebexMediaResult[] = [];
+  if (msg.files && msg.files.length > 0 && token) {
+    mediaResults = await resolveWebexInboundMedia(msg.files, token).catch((err: unknown) => {
+      runtime.error(`webex: inbound media download error: ${String(err)}`);
+      return [];
+    });
+  }
+
+  const firstMedia = mediaResults[0];
   const ctxPayload = finalizeInboundContext({
     From: msg.personEmail,
     Body: msg.text,
@@ -151,6 +218,16 @@ async function processWebexMessage(params: {
     AccountId: accountId,
     ChatType: msg.roomType === "direct" ? "direct" : "group",
     Channel: "webex",
+    ...(firstMedia
+      ? {
+          MediaPath: firstMedia.path,
+          MediaUrl: firstMedia.path,
+          MediaType: firstMedia.contentType,
+          MediaPaths: mediaResults.map((m) => m.path),
+          MediaUrls: mediaResults.map((m) => m.path),
+          MediaTypes: mediaResults.map((m) => m.contentType ?? ""),
+        }
+      : {}),
   });
 
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({

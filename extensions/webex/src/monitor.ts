@@ -5,6 +5,16 @@ import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { resolveWebexConversationRoute } from "./conversation-route.js";
+import {
+  buildRoomContextNote,
+  clearPendingRoomSelection,
+  findSharedRoomsWithWorkspace,
+  getRoomProjectContext,
+  hasPendingRoomSelection,
+  resolvePendingRoomSelection,
+  saveRoomFile,
+  storePendingRoomSelection,
+} from "./room-workspace.js";
 import { getWebexRuntime } from "./runtime.js";
 import { isWebexAllowedMime, sendMessageWebex } from "./send.js";
 import { resolveWebexToken } from "./token.js";
@@ -199,6 +209,8 @@ const WEBEX_INBOUND_MAX_BYTES = 50 * 1024 * 1024;
 type WebexMediaResult = {
   path: string;
   contentType?: string;
+  originalFilename?: string;
+  buffer?: Buffer;
 };
 
 // Webex file content may return 423 (Locked) while being processed/scanned.
@@ -264,7 +276,7 @@ async function downloadWebexFile(
       WEBEX_INBOUND_MAX_BYTES,
       originalFilename,
     );
-    return { path: saved.path, contentType: saved.contentType };
+    return { path: saved.path, contentType: saved.contentType, originalFilename, buffer };
   } catch {
     return null;
   }
@@ -303,6 +315,210 @@ function isWebexSenderAllowed(
   });
 }
 
+// ---- Room title lookup -------------------------------------------------------
+
+async function fetchRoomTitle(roomId: string, token: string): Promise<string | undefined> {
+  try {
+    const room = (await webexGet(`/rooms/${encodeURIComponent(roomId)}`, token)) as {
+      title?: string;
+    };
+    return room.title;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---- DM project selector flow -----------------------------------------------
+
+async function handleDmProjectSelector(params: {
+  cfg: OpenClawConfig;
+  accountId: string;
+  runtime: RuntimeEnv;
+  msg: WebexInboundMessage;
+  botPersonId: string;
+  token: string;
+}): Promise<boolean> {
+  const { cfg, accountId, runtime, msg, botPersonId, token } = params;
+  const userEmail = msg.personEmail;
+
+  // If user is currently in the middle of a selection, resolve their reply
+  if (hasPendingRoomSelection(userEmail)) {
+    const selection = resolvePendingRoomSelection(userEmail, msg.text ?? "");
+    if (selection === "invalid") {
+      await sendMessageWebex({
+        cfg,
+        accountId,
+        to: msg.roomId,
+        markdown: "Please reply with just the number of the project you'd like to reference.",
+      });
+      return true;
+    }
+    if (selection) {
+      // Route message with the chosen project's context injected
+      const { note, filesDir, manifest } = await getRoomProjectContext(selection.roomId);
+      const fileCount = Object.keys(manifest.files).length;
+      await runAgentTurnWithContext({
+        cfg,
+        accountId,
+        runtime,
+        msg,
+        botPersonId,
+        roomContextNote: note,
+        roomFilesDir: filesDir,
+        roomTitle: selection.roomTitle,
+        fileCount,
+      });
+      return true;
+    }
+    // selection === null means no pending state (expired) — fall through to fresh lookup
+  }
+
+  // Look up shared rooms with a workspace
+  const sharedRooms = await findSharedRoomsWithWorkspace({
+    token,
+    botPersonId,
+    userEmail,
+  }).catch((err: unknown) => {
+    runtime.error(`webex: membership lookup failed: ${String(err)}`);
+    return [];
+  });
+
+  if (sharedRooms.length === 0) {
+    // No project workspaces found — route as plain DM with no project context
+    return false;
+  }
+
+  if (sharedRooms.length === 1) {
+    // Only one shared project — use it automatically
+    const room = sharedRooms[0]!;
+    const { note, filesDir, manifest } = await getRoomProjectContext(room.roomId);
+    const fileCount = Object.keys(manifest.files).length;
+    await runAgentTurnWithContext({
+      cfg,
+      accountId,
+      runtime,
+      msg,
+      botPersonId,
+      roomContextNote: note,
+      roomFilesDir: filesDir,
+      roomTitle: room.roomTitle,
+      fileCount,
+    });
+    return true;
+  }
+
+  // Multiple shared projects — ask user to choose
+  storePendingRoomSelection(userEmail, sharedRooms);
+  const list = sharedRooms.map((r, i) => `${i + 1}. ${r.roomTitle}`).join("\n");
+  await sendMessageWebex({
+    cfg,
+    accountId,
+    to: msg.roomId,
+    markdown: `I can see you're in multiple projects I'm also part of. Which should I reference?\n\n${list}\n\nReply with the number.`,
+  });
+  return true;
+}
+
+// ---- Agent turn with injected project context --------------------------------
+
+async function runAgentTurnWithContext(params: {
+  cfg: OpenClawConfig;
+  accountId: string;
+  runtime: RuntimeEnv;
+  msg: WebexInboundMessage;
+  botPersonId: string;
+  roomContextNote: string | null;
+  roomFilesDir: string;
+  roomTitle: string;
+  fileCount: number;
+}): Promise<void> {
+  const {
+    cfg,
+    accountId,
+    runtime,
+    msg,
+    botPersonId,
+    roomContextNote,
+    roomFilesDir,
+    roomTitle,
+    fileCount,
+  } = params;
+
+  const route = resolveWebexConversationRoute({
+    cfg,
+    accountId,
+    roomId: msg.roomId,
+    isGroup: false,
+    senderId: msg.personEmail,
+    senderPersonId: msg.personId,
+    mentionedPeople: msg.mentionedPeople,
+    botPersonId,
+  });
+  if (!route) return;
+
+  // Prepend project context to the user's message
+  const contextPreamble = roomContextNote
+    ? `${roomContextNote}\n[Project files directory: ${roomFilesDir}]\n\n`
+    : `[Project: ${roomTitle} — ${fileCount} file(s) in ${roomFilesDir}]\n\n`;
+
+  const bodyForAgent = `${contextPreamble}${msg.text ?? ""}`;
+
+  const ctxPayload = finalizeInboundContext({
+    From: msg.personEmail,
+    Body: msg.text,
+    BodyForAgent: bodyForAgent,
+    CommandBody: msg.text,
+    MessageSid: msg.id,
+    AccountId: accountId,
+    ChatType: "direct",
+    Channel: "webex",
+  });
+
+  const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
+    cfg,
+    agentId: route.agentId,
+    channel: "webex",
+    accountId,
+  });
+
+  const core = getWebexRuntime();
+
+  await core.channel.turn.run({
+    channel: "webex",
+    accountId,
+    raw: msg,
+    adapter: {
+      ingest: () => ({ id: msg.id, rawText: msg.text }),
+      resolveTurn: () => ({
+        cfg,
+        channel: "webex",
+        accountId,
+        agentId: route.agentId,
+        routeSessionKey: route.sessionKey,
+        storePath: core.channel.session.resolveStorePath(undefined, { agentId: route.agentId }),
+        ctxPayload,
+        recordInboundSession: core.channel.session.recordInboundSession,
+        dispatchReplyWithBufferedBlockDispatcher:
+          core.channel.reply.dispatchReplyWithBufferedBlockDispatcher,
+        dispatcherOptions: { ...replyPipeline },
+        replyOptions: { onModelSelected },
+        delivery: {
+          deliver: async (payload: ReplyPayload, _info) => {
+            const text = payload.text ?? "";
+            if (!text) return;
+            await sendMessageWebex({ cfg, accountId, to: msg.roomId, markdown: text });
+          },
+          onError: (err: unknown, _info) => {
+            runtime.error(`webex: reply delivery failed: ${String(err)}`);
+          },
+        },
+      }),
+    },
+  });
+}
+
+// ---- Main message processor --------------------------------------------------
+
 async function processWebexMessage(params: {
   cfg: OpenClawConfig;
   accountId: string;
@@ -328,6 +544,7 @@ async function processWebexMessage(params: {
 
   const { token } = resolveWebexToken(cfg, { accountId });
 
+  // Download any attached files
   let mediaResults: WebexMediaResult[] = [];
   if (msg.files && msg.files.length > 0 && token) {
     mediaResults = await resolveWebexInboundMedia(msg.files, token, runtime).catch(
@@ -338,11 +555,58 @@ async function processWebexMessage(params: {
     );
   }
 
+  // For group rooms: persist files to the room workspace (latest-wins per filename)
+  if (msg.roomType === "group" && mediaResults.length > 0 && token) {
+    const roomTitle = await fetchRoomTitle(msg.roomId, token);
+    for (const media of mediaResults) {
+      if (!media.buffer || !media.contentType) continue;
+      await saveRoomFile({
+        roomId: msg.roomId,
+        roomTitle,
+        buffer: media.buffer,
+        contentType: media.contentType,
+        originalFilename: media.originalFilename,
+        senderEmail: msg.personEmail,
+      }).catch((err: unknown) => {
+        runtime.error(`webex: room file save failed: ${String(err)}`);
+      });
+    }
+  }
+
+  // For DM messages: run the project selector flow
+  if (msg.roomType === "direct" && token) {
+    // Clear any stale pending selection if user sends a file in a DM
+    if (mediaResults.length > 0) {
+      clearPendingRoomSelection(msg.personEmail);
+    }
+    const handled = await handleDmProjectSelector({
+      cfg,
+      accountId,
+      runtime,
+      msg,
+      botPersonId,
+      token,
+    }).catch((err: unknown) => {
+      runtime.error(`webex: DM project selector failed: ${String(err)}`);
+      return false;
+    });
+    if (handled) return;
+  }
+
+  // Standard turn: inject room workspace context note for group rooms
+  let bodyForAgent = msg.text ?? "";
+  if (msg.roomType === "group") {
+    const contextNote = await buildRoomContextNote(msg.roomId).catch(() => null);
+    if (contextNote) {
+      bodyForAgent = `${contextNote}\n\n${bodyForAgent}`;
+    }
+  }
+
   const firstMedia = mediaResults[0];
   const ctxPayload = finalizeInboundContext({
     From: msg.personEmail,
     Body: msg.text,
-    BodyForAgent: msg.text,
+    BodyForAgent: bodyForAgent,
     CommandBody: msg.text,
     MessageSid: msg.id,
     AccountId: accountId,

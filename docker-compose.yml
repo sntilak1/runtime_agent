@@ -38,9 +38,11 @@ services:
       - /opt/openclaw/dist-patches/plugin-registry-x83fIWqx.js:/app/dist/plugin-registry-x83fIWqx.js:ro
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
-      - /opt/openclaw/dist-patches/webex-setup-surface-gTeQSRo8.js:/app/dist/extensions/webex/setup-surface-gTeQSRo8.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
-      - /opt/openclaw/dist-patches/webex-monitor-C4l1vqHv.js:/app/dist/extensions/webex/monitor-C4l1vqHv.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-Dyv14uEk.js:/app/dist/extensions/webex/monitor-Dyv14uEk.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-C2prHr_s.js:/app/dist/extensions/webex/channel.runtime-C2prHr_s.js:ro
+      - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -108,8 +110,11 @@ services:
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
-      - /opt/openclaw/dist-patches/webex-setup-surface-gTeQSRo8.js:/app/dist/extensions/webex/setup-surface-gTeQSRo8.js:ro
+      - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-Dyv14uEk.js:/app/dist/extensions/webex/monitor-Dyv14uEk.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-C2prHr_s.js:/app/dist/extensions/webex/channel.runtime-C2prHr_s.js:ro
+      - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
     stdin_open: true
     tty: true
     init: true

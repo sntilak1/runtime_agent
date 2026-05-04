@@ -3,7 +3,6 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
-import { waitForAbortSignal } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { resolveWebexConversationRoute } from "./conversation-route.js";
 import { getWebexRuntime } from "./runtime.js";
@@ -30,33 +29,18 @@ export type MonitorWebexOpts = {
   abortSignal?: AbortSignal;
 };
 
-// Webex SDK loaded lazily to keep startup cost minimal.
-type WebexInstance = {
-  messages: {
-    listen: () => Promise<void>;
-    stopListening: () => Promise<void>;
-    on: (
-      event: string,
-      handler: (event: { data: WebexInboundMessage }) => void | Promise<void>,
-    ) => void;
-  };
-  people: {
-    get: (id: "me") => Promise<{ id: string; emails: string[]; displayName: string }>;
-  };
-};
-
-async function loadWebexSdk(): Promise<{
-  init: (opts: { credentials: { access_token: string } }) => WebexInstance;
-}> {
-  const mod = await import("webex");
-  return (mod.default ?? mod) as unknown as {
-    init: (opts: { credentials: { access_token: string } }) => WebexInstance;
-  };
-}
-
 const RECONNECT_INITIAL_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
 const RECONNECT_MULTIPLIER = 2;
+const WEBEX_API = "https://webexapis.com/v1";
+
+async function webexGet(path: string, token: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${WEBEX_API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`webex GET ${path} failed: HTTP ${res.status}`);
+  return res.json() as Promise<Record<string, unknown>>;
+}
 
 export async function monitorWebexProvider(opts: MonitorWebexOpts): Promise<void> {
   const { cfg, accountId = "default", runtime, abortSignal } = opts;
@@ -95,31 +79,116 @@ async function runWebexSession(opts: {
     throw new Error("webex: no bot token — set channels.webex.botToken or WEBEX_BOT_TOKEN");
   }
 
-  const Webex = await loadWebexSdk();
-  const webex = Webex.init({ credentials: { access_token: token } });
-
-  const me = await webex.people.get("me");
+  const me = (await webexGet("/people/me", token)) as {
+    id: string;
+    emails: string[];
+    displayName: string;
+  };
   const botPersonId = me.id;
   runtime.log(`webex: connected as ${me.displayName} (${me.emails[0] ?? ""})`);
 
-  await webex.messages.listen();
+  await runWebexWdmLoop({ token, botPersonId, cfg, accountId, runtime, abortSignal });
+}
+
+async function discoverWdmUrl(token: string): Promise<string> {
+  const u2cUrl = process.env.U2C_SERVICE_URL ?? "https://u2c.wbx2.com/u2c/api/v1";
+  const catalogRes = await fetch(`${u2cUrl}/user/catalog`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!catalogRes.ok) throw new Error(`webex: U2C catalog failed: HTTP ${catalogRes.status}`);
+  const catalog = (await catalogRes.json()) as {
+    serviceLinks?: Record<string, unknown>;
+    services?: Array<{ name: string; serviceUrl?: string; url?: string }>;
+  };
+  const wdmEntry = catalog.serviceLinks?.wdm ?? catalog.services?.find((s) => s.name === "wdm");
+  if (wdmEntry)
+    return typeof wdmEntry === "string"
+      ? wdmEntry
+      : ((wdmEntry as { serviceUrl?: string; url?: string }).serviceUrl ??
+          (wdmEntry as { url?: string }).url ??
+          "https://wdm-a.wbx2.com/wdm/api/v1");
+  return "https://wdm-a.wbx2.com/wdm/api/v1";
+}
+
+async function runWebexWdmLoop(opts: {
+  token: string;
+  botPersonId: string;
+  cfg: OpenClawConfig;
+  accountId: string;
+  runtime: RuntimeEnv;
+  abortSignal?: AbortSignal;
+}): Promise<void> {
+  const { token, botPersonId, cfg, accountId, runtime, abortSignal } = opts;
+  const { WebSocket } = await import("ws");
+
+  const wdmBaseUrl = await discoverWdmUrl(token);
+  const regRes = await fetch(`${wdmBaseUrl}/devices`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "openclaw-bot",
+      deviceType: "WEB",
+      model: "web-js-sdk",
+      localizedModel: "webex-js-sdk",
+      systemName: "WEBEX_JS_SDK",
+      systemVersion: "1.0.0",
+    }),
+  });
+  if (!regRes.ok) {
+    const text = await regRes.text().catch(() => "");
+    throw new Error(`webex: WDM device registration failed: HTTP ${regRes.status} ${text}`);
+  }
+  const device = (await regRes.json()) as { webSocketUrl?: string };
+  const wsUrl = device.webSocketUrl;
+  if (!wsUrl) throw new Error("webex: WDM device registration did not return webSocketUrl");
+
   runtime.log("webex: WebSocket listener active (outbound WSS — no inbound port required)");
 
-  webex.messages.on("created", (event: { data: WebexInboundMessage }) => {
-    const msg = event.data;
-    // Ignore own messages.
-    if (msg.personId === botPersonId) return;
-
-    void processWebexMessage({ cfg, accountId, runtime, msg, botPersonId }).catch(
-      (err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        runtime.error(`webex: dispatch error: ${message}`);
-      },
-    );
+  await new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${token}` } });
+    const cleanup = () => {
+      try {
+        ws.close();
+      } catch {}
+    };
+    abortSignal?.addEventListener("abort", () => {
+      cleanup();
+      resolve();
+    });
+    ws.on("error", (err: Error) => {
+      cleanup();
+      reject(err);
+    });
+    ws.on("close", () => resolve());
+    ws.on("message", (raw: Buffer) => {
+      let envelope: Record<string, unknown>;
+      try {
+        envelope = JSON.parse(raw.toString()) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      const data = envelope?.data as Record<string, unknown> | undefined;
+      if (data?.eventType !== "conversation.activity") return;
+      const activity = data?.activity as Record<string, unknown> | undefined;
+      if (!activity || activity.verb !== "post") return;
+      const actor = activity.actor as Record<string, unknown> | undefined;
+      if (actor?.entryUUID === botPersonId || actor?.id === botPersonId) return;
+      const msgId = (activity.id ?? activity.url) as string | undefined;
+      if (!msgId) return;
+      const cleanId = msgId.replace(/.*\/messages\//, "");
+      webexGet(`/messages/${encodeURIComponent(cleanId)}`, token)
+        .then((msg) => {
+          const inbound = msg as unknown as WebexInboundMessage;
+          if (!inbound || inbound.personId === botPersonId) return;
+          void processWebexMessage({ cfg, accountId, runtime, msg: inbound, botPersonId }).catch(
+            (err: unknown) => {
+              runtime.error(`webex: dispatch error: ${String(err)}`);
+            },
+          );
+        })
+        .catch(() => {});
+    });
   });
-
-  await waitForAbortSignal(abortSignal);
-  await webex.messages.stopListening().catch(() => {});
 }
 
 // 50 MB inbound limit, matching the outbound cap.
@@ -177,6 +246,30 @@ async function resolveWebexInboundMedia(
   return results.filter((r): r is WebexMediaResult => r !== null);
 }
 
+function isWebexSenderAllowed(
+  cfg: OpenClawConfig,
+  accountId: string,
+  senderEmail: string | undefined,
+): boolean {
+  const webexCfg = (cfg.channels as Record<string, unknown> | undefined)?.webex as
+    | Record<string, unknown>
+    | undefined;
+  const accountCfg =
+    accountId !== "default"
+      ? (webexCfg?.accounts as Record<string, { allowFrom?: string[] }> | undefined)?.[accountId]
+      : undefined;
+  const allowFrom = accountCfg?.allowFrom ?? (webexCfg?.allowFrom as string[] | undefined);
+  if (!allowFrom || allowFrom.length === 0) return true;
+  if (!senderEmail) return false;
+  const sender = senderEmail.toLowerCase();
+  return allowFrom.some((entry) => {
+    const e = String(entry).toLowerCase();
+    if (e === "*") return true;
+    if (e.startsWith("@")) return sender.endsWith(e);
+    return sender === e;
+  });
+}
+
 async function processWebexMessage(params: {
   cfg: OpenClawConfig;
   accountId: string;
@@ -185,6 +278,8 @@ async function processWebexMessage(params: {
   botPersonId: string;
 }): Promise<void> {
   const { cfg, accountId, runtime, msg, botPersonId } = params;
+
+  if (!isWebexSenderAllowed(cfg, accountId, msg.personEmail)) return;
 
   const route = resolveWebexConversationRoute({
     cfg,

@@ -19,7 +19,7 @@ import {
   DEFAULT_ACCOUNT_ID,
   PAIRING_APPROVED_MESSAGE,
 } from "../runtime-api.js";
-import { resolveWebexAccount } from "./accounts.js";
+import { listWebexAccountIds, resolveWebexAccount } from "./accounts.js";
 import { WebexChannelConfigSchema } from "./config-schema.js";
 import { resolveWebexOutboundSessionRoute } from "./conversation-route.js";
 import type { ProbeWebexResult } from "./probe.js";
@@ -43,6 +43,7 @@ const webexConfigAdapter = createTopLevelChannelConfigAdapter<
   { allowFrom?: string[]; defaultTo?: string }
 >({
   sectionKey: "webex",
+  listAccountIds: (cfg) => listWebexAccountIds(cfg),
   resolveAccount: (cfg) => {
     const { token } = resolveWebexToken(cfg);
     return {
@@ -86,7 +87,8 @@ export const webexPlugin: ChannelPlugin<ResolvedWebexAccount, ProbeWebexResult> 
       configSchema: WebexChannelConfigSchema,
       config: {
         ...webexConfigAdapter,
-        isConfigured: (_account, cfg) => Boolean(resolveWebexToken(cfg).token),
+        isConfigured: (account, cfg) =>
+          Boolean(resolveWebexToken(cfg, { accountId: account.accountId }).token),
         resolveAccount: (cfg, accountId) => {
           const resolved = resolveWebexAccount({ cfg, accountId });
           return {

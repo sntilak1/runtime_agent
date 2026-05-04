@@ -168,8 +168,8 @@ async function runWebexWdmLoop(opts: {
         return;
       }
       const data = envelope?.data as Record<string, unknown> | undefined;
-      if (data?.eventType !== "conversation.activity") return;
       const activity = data?.activity as Record<string, unknown> | undefined;
+      if (data?.eventType !== "conversation.activity") return;
       if (!activity || (activity.verb !== "post" && activity.verb !== "share")) return;
       const actor = activity.actor as Record<string, unknown> | undefined;
       if (actor?.entryUUID === botPersonId || actor?.id === botPersonId) return;
@@ -186,7 +186,9 @@ async function runWebexWdmLoop(opts: {
             },
           );
         })
-        .catch(() => {});
+        .catch((err: unknown) => {
+          runtime.error(`webex: GET /messages failed: ${String(err)}`);
+        });
     });
   });
 }
@@ -199,14 +201,44 @@ type WebexMediaResult = {
   contentType?: string;
 };
 
-async function downloadWebexFile(url: string, token: string): Promise<WebexMediaResult | null> {
-  let res: Response;
-  try {
-    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  } catch {
-    return null;
+// Webex file content may return 423 (Locked) while being processed/scanned.
+const WEBEX_FILE_RETRY_DELAYS_MS = [2000, 4000, 8000];
+
+async function fetchWebexFileWithRetry(
+  url: string,
+  token: string,
+  runtime: RuntimeEnv,
+): Promise<Response | null> {
+  const delays = [0, ...WEBEX_FILE_RETRY_DELAYS_MS];
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    const delayMs = delays[attempt]!;
+    if (delayMs > 0) await sleep(delayMs);
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (err) {
+      runtime.error(`webex: file fetch error: ${String(err)}`);
+      return null;
+    }
+    if (res.status === 423) {
+      continue;
+    }
+    if (!res.ok) {
+      runtime.error(`webex: file fetch HTTP ${res.status}`);
+      return null;
+    }
+    return res;
   }
-  if (!res.ok) return null;
+  return null;
+}
+
+async function downloadWebexFile(
+  url: string,
+  token: string,
+  runtime: RuntimeEnv,
+): Promise<WebexMediaResult | null> {
+  const res = await fetchWebexFileWithRetry(url, token, runtime);
+  if (!res) return null;
 
   const contentType = res.headers.get("content-type") ?? undefined;
   if (!isWebexAllowedMime(contentType)) return null;
@@ -241,8 +273,9 @@ async function downloadWebexFile(url: string, token: string): Promise<WebexMedia
 async function resolveWebexInboundMedia(
   fileUrls: string[],
   token: string,
+  runtime: RuntimeEnv,
 ): Promise<WebexMediaResult[]> {
-  const results = await Promise.all(fileUrls.map((url) => downloadWebexFile(url, token)));
+  const results = await Promise.all(fileUrls.map((url) => downloadWebexFile(url, token, runtime)));
   return results.filter((r): r is WebexMediaResult => r !== null);
 }
 
@@ -297,10 +330,12 @@ async function processWebexMessage(params: {
 
   let mediaResults: WebexMediaResult[] = [];
   if (msg.files && msg.files.length > 0 && token) {
-    mediaResults = await resolveWebexInboundMedia(msg.files, token).catch((err: unknown) => {
-      runtime.error(`webex: inbound media download error: ${String(err)}`);
-      return [];
-    });
+    mediaResults = await resolveWebexInboundMedia(msg.files, token, runtime).catch(
+      (err: unknown) => {
+        runtime.error(`webex: inbound media download error: ${String(err)}`);
+        return [];
+      },
+    );
   }
 
   const firstMedia = mediaResults[0];

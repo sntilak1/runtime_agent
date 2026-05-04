@@ -170,7 +170,7 @@ async function runWebexWdmLoop(opts: {
       const data = envelope?.data as Record<string, unknown> | undefined;
       if (data?.eventType !== "conversation.activity") return;
       const activity = data?.activity as Record<string, unknown> | undefined;
-      if (!activity || activity.verb !== "post") return;
+      if (!activity || (activity.verb !== "post" && activity.verb !== "share")) return;
       const actor = activity.actor as Record<string, unknown> | undefined;
       if (actor?.entryUUID === botPersonId || actor?.id === botPersonId) return;
       const msgId = (activity.id ?? activity.url) as string | undefined;

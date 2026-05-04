@@ -40,8 +40,8 @@ services:
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
       - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
-      - /opt/openclaw/dist-patches/webex-monitor-Dyv14uEk.js:/app/dist/extensions/webex/monitor-Dyv14uEk.js:ro
-      - /opt/openclaw/dist-patches/webex-channel.runtime-C2prHr_s.js:/app/dist/extensions/webex/channel.runtime-C2prHr_s.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-BFQKYUFR.js:/app/dist/extensions/webex/monitor-BFQKYUFR.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-B5ecAITi.js:/app/dist/extensions/webex/channel.runtime-B5ecAITi.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
@@ -112,8 +112,8 @@ services:
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro
       - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
-      - /opt/openclaw/dist-patches/webex-monitor-Dyv14uEk.js:/app/dist/extensions/webex/monitor-Dyv14uEk.js:ro
-      - /opt/openclaw/dist-patches/webex-channel.runtime-C2prHr_s.js:/app/dist/extensions/webex/channel.runtime-C2prHr_s.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-BFQKYUFR.js:/app/dist/extensions/webex/monitor-BFQKYUFR.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-B5ecAITi.js:/app/dist/extensions/webex/channel.runtime-B5ecAITi.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
     stdin_open: true
     tty: true

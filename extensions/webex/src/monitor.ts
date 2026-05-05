@@ -244,6 +244,64 @@ async function fetchWebexFileWithRetry(
   return null;
 }
 
+// Extensions that Webex may serve as text/plain but are valid inbound attachments.
+const WEBEX_INBOUND_ALLOWED_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".txt",
+  ".csv",
+  ".rtf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".svg",
+]);
+
+function resolveInboundContentType(
+  headerContentType: string | undefined,
+  originalFilename: string | undefined,
+): string | undefined {
+  // Webex frequently reports text/plain for all file types.
+  // Use the filename extension to determine the real MIME when the header is unhelpful.
+  if (headerContentType && headerContentType !== "text/plain") {
+    return headerContentType;
+  }
+  if (!originalFilename) return headerContentType;
+  const ext = originalFilename.slice(originalFilename.lastIndexOf(".")).toLowerCase();
+  const map: Record<string, string> = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".rtf": "application/rtf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+  };
+  return map[ext] ?? headerContentType;
+}
+
 async function downloadWebexFile(
   url: string,
   token: string,
@@ -252,9 +310,26 @@ async function downloadWebexFile(
   const res = await fetchWebexFileWithRetry(url, token, runtime);
   if (!res) return null;
 
-  const contentType = res.headers.get("content-type") ?? undefined;
-  if (!isWebexAllowedMime(contentType)) {
-    runtime.log(`webex: skipping file with disallowed content-type: ${contentType ?? "(none)"}`);
+  const headerContentType = res.headers.get("content-type") ?? undefined;
+
+  const contentDisposition = res.headers.get("content-disposition") ?? "";
+  const filenameMatch = /filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i.exec(contentDisposition);
+  const originalFilename = filenameMatch?.[1]?.trim() ?? undefined;
+
+  const resolvedContentType = resolveInboundContentType(headerContentType, originalFilename);
+
+  // Allow if the resolved content-type matches, OR if the extension is on the allowed list
+  // (Webex may serve files as text/plain regardless of actual type).
+  const ext = originalFilename
+    ? originalFilename.slice(originalFilename.lastIndexOf(".")).toLowerCase()
+    : "";
+  const allowedByExtension = ext !== "" && WEBEX_INBOUND_ALLOWED_EXTENSIONS.has(ext);
+  const allowedByMime = isWebexAllowedMime(resolvedContentType);
+
+  if (!allowedByMime && !allowedByExtension) {
+    runtime.log(
+      `webex: skipping file — content-type: ${headerContentType ?? "(none)"}, filename: ${originalFilename ?? "(none)"}`,
+    );
     return null;
   }
 
@@ -267,19 +342,24 @@ async function downloadWebexFile(
     return null;
   }
 
-  const contentDisposition = res.headers.get("content-disposition") ?? "";
-  const filenameMatch = /filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)/i.exec(contentDisposition);
-  const originalFilename = filenameMatch?.[1]?.trim() ?? undefined;
+  runtime.log(
+    `webex: downloading file: ${originalFilename ?? "(unnamed)"} type=${resolvedContentType ?? headerContentType ?? "unknown"}`,
+  );
 
   try {
     const saved = await saveMediaBuffer(
       buffer,
-      contentType,
+      resolvedContentType,
       "inbound",
       WEBEX_INBOUND_MAX_BYTES,
       originalFilename,
     );
-    return { path: saved.path, contentType: saved.contentType, originalFilename, buffer };
+    return {
+      path: saved.path,
+      contentType: saved.contentType ?? resolvedContentType,
+      originalFilename,
+      buffer,
+    };
   } catch {
     return null;
   }

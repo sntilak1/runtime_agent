@@ -337,8 +337,9 @@ async function handleDmProjectSelector(params: {
   msg: WebexInboundMessage;
   botPersonId: string;
   token: string;
+  mediaResults: WebexMediaResult[];
 }): Promise<boolean> {
-  const { cfg, accountId, runtime, msg, botPersonId, token } = params;
+  const { cfg, accountId, runtime, msg, botPersonId, token, mediaResults } = params;
   const userEmail = msg.personEmail;
 
   // If user is currently in the middle of a selection, resolve their reply
@@ -367,6 +368,7 @@ async function handleDmProjectSelector(params: {
         roomFilesDir: filesDir,
         roomTitle: selection.roomTitle,
         fileCount,
+        mediaResults,
       });
       return true;
     }
@@ -403,6 +405,7 @@ async function handleDmProjectSelector(params: {
       roomFilesDir: filesDir,
       roomTitle: room.roomTitle,
       fileCount,
+      mediaResults,
     });
     return true;
   }
@@ -431,6 +434,7 @@ async function runAgentTurnWithContext(params: {
   roomFilesDir: string;
   roomTitle: string;
   fileCount: number;
+  mediaResults: WebexMediaResult[];
 }): Promise<void> {
   const {
     cfg,
@@ -442,6 +446,7 @@ async function runAgentTurnWithContext(params: {
     roomFilesDir,
     roomTitle,
     fileCount,
+    mediaResults,
   } = params;
 
   const route = resolveWebexConversationRoute({
@@ -463,6 +468,7 @@ async function runAgentTurnWithContext(params: {
 
   const bodyForAgent = `${contextPreamble}${msg.text ?? ""}`;
 
+  const firstMedia = mediaResults[0];
   const ctxPayload = finalizeInboundContext({
     From: msg.personEmail,
     Body: msg.text,
@@ -472,6 +478,16 @@ async function runAgentTurnWithContext(params: {
     AccountId: accountId,
     ChatType: "direct",
     Channel: "webex",
+    ...(firstMedia
+      ? {
+          MediaPath: firstMedia.path,
+          MediaUrl: firstMedia.path,
+          MediaType: firstMedia.contentType,
+          MediaPaths: mediaResults.map((m) => m.path),
+          MediaUrls: mediaResults.map((m) => m.path),
+          MediaTypes: mediaResults.map((m) => m.contentType ?? ""),
+        }
+      : {}),
   });
 
   const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
@@ -586,6 +602,7 @@ async function processWebexMessage(params: {
       msg,
       botPersonId,
       token,
+      mediaResults,
     }).catch((err: unknown) => {
       runtime.error(`webex: DM project selector failed: ${String(err)}`);
       return false;

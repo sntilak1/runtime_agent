@@ -41,8 +41,8 @@ services:
       - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-api.js:/app/dist/extensions/webex/runtime-api.js:ro
-      - /opt/openclaw/dist-patches/webex-monitor-yhqOGhlS.js:/app/dist/extensions/webex/monitor-yhqOGhlS.js:ro
-      - /opt/openclaw/dist-patches/webex-channel.runtime-BqdPgbDc.js:/app/dist/extensions/webex/channel.runtime-BqdPgbDc.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-BCoNfS4q.js:/app/dist/extensions/webex/monitor-BCoNfS4q.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-D8NY5_Ol.js:/app/dist/extensions/webex/channel.runtime-D8NY5_Ol.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
@@ -114,8 +114,8 @@ services:
       - /opt/openclaw/dist-patches/webex-setup-surface-CszvAg5-.js:/app/dist/extensions/webex/setup-surface-CszvAg5-.js:ro
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-api.js:/app/dist/extensions/webex/runtime-api.js:ro
-      - /opt/openclaw/dist-patches/webex-monitor-yhqOGhlS.js:/app/dist/extensions/webex/monitor-yhqOGhlS.js:ro
-      - /opt/openclaw/dist-patches/webex-channel.runtime-BqdPgbDc.js:/app/dist/extensions/webex/channel.runtime-BqdPgbDc.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-BCoNfS4q.js:/app/dist/extensions/webex/monitor-BCoNfS4q.js:ro
+      - /opt/openclaw/dist-patches/webex-channel.runtime-D8NY5_Ol.js:/app/dist/extensions/webex/channel.runtime-D8NY5_Ol.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
     stdin_open: true
     tty: true

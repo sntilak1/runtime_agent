@@ -253,7 +253,10 @@ async function downloadWebexFile(
   if (!res) return null;
 
   const contentType = res.headers.get("content-type") ?? undefined;
-  if (!isWebexAllowedMime(contentType)) return null;
+  if (!isWebexAllowedMime(contentType)) {
+    runtime.log(`webex: skipping file with disallowed content-type: ${contentType ?? "(none)"}`);
+    return null;
+  }
 
   let buffer: Buffer;
   try {
@@ -562,12 +565,18 @@ async function processWebexMessage(params: {
 
   // Download any attached files
   let mediaResults: WebexMediaResult[] = [];
+  runtime.log(
+    `webex: processing message from ${msg.personEmail} roomType=${msg.roomType} files=${msg.files?.length ?? 0}`,
+  );
   if (msg.files && msg.files.length > 0 && token) {
     mediaResults = await resolveWebexInboundMedia(msg.files, token, runtime).catch(
       (err: unknown) => {
         runtime.error(`webex: inbound media download error: ${String(err)}`);
         return [];
       },
+    );
+    runtime.log(
+      `webex: downloaded ${mediaResults.length}/${msg.files.length} files: ${mediaResults.map((m) => `${m.originalFilename ?? "?"} (${m.contentType ?? "?"}) -> ${m.path}`).join(", ")}`,
     );
   }
 
@@ -591,6 +600,9 @@ async function processWebexMessage(params: {
 
   // For DM messages: run the project selector flow
   if (msg.roomType === "direct" && token) {
+    runtime.log(
+      `webex: DM message, mediaResults=${mediaResults.length}, hasPending=${hasPendingRoomSelection(msg.personEmail)}`,
+    );
     // Clear any stale pending selection if user sends a file in a DM
     if (mediaResults.length > 0) {
       clearPendingRoomSelection(msg.personEmail);

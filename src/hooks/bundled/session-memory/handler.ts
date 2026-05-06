@@ -134,7 +134,10 @@ const saveSessionToMemory: HookHandler = async (event) => {
       workspaceDir: contextWorkspaceDir,
       sessionKey: event.sessionKey,
     });
-    const memoryDir = path.join(workspaceDir, "memory");
+    const memoryDir =
+      typeof context.memoryDir === "string" && context.memoryDir.trim().length > 0
+        ? context.memoryDir
+        : path.join(workspaceDir, "memory");
     await fs.mkdir(memoryDir, { recursive: true });
 
     // Use the user's local timezone for memory artifact names and headings.

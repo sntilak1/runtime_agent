@@ -77,17 +77,21 @@ Webex rooms.
 │   │   └── *.md
 │   └── skills/
 │
-├── rooms/                               # Webex per-room file workspaces
+├── rooms/                               # Webex per-room workspaces (group spaces and DMs)
 │   ├── <webex-roomId-A>/                # one directory per Webex space or DM room
 │   │   ├── manifest.json                # file index: name, MIME type, sender, date, size
-│   │   └── files/
-│   │       ├── project-plan.docx
-│   │       └── budget.xlsx
+│   │   ├── files/
+│   │   │   ├── project-plan.docx
+│   │   │   └── budget.xlsx
+│   │   └── memory/                      # room-scoped long-term memory (isolated per room)
+│   │       └── 2026-05-06-project-kickoff.md
 │   │
 │   └── <webex-roomId-B>/
 │       ├── manifest.json
-│       └── files/
-│           └── requirements.pdf
+│       ├── files/
+│       │   └── requirements.pdf
+│       └── memory/
+│           └── 2026-05-07-requirements-review.md
 │
 └── media/
     └── inbound/                         # short-lived inbound file staging (2-minute TTL)
@@ -125,6 +129,23 @@ so it knows which project files are available and where they are on disk.
 
 This workspace belongs to the **room**, not the agent. If two agents are both
 members of the same Webex space they share the same `rooms/<roomId>/` directory.
+
+### Room-scoped memory (`rooms/<roomId>/memory/`)
+
+Long-term memory is scoped to each room (both group spaces and DMs). When a user
+triggers `/new` or `/reset`, the session-memory hook writes the conversation
+summary to `rooms/<roomId>/memory/` instead of the shared agent workspace.
+
+At the start of each turn, any existing room memory files are read and injected
+into the agent's context as untrusted background notes — the same format as
+agent workspace startup context.
+
+This means:
+
+- A user's DM conversation history never appears in another user's DM.
+- Group space A's accumulated knowledge never bleeds into group space B.
+- The agent's `workspace/memory/` is never written to or read from during
+  Webex turns; it remains available only for non-Webex sessions.
 
 ### DM project selector
 

@@ -1,5 +1,6 @@
 import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-types";
+import { registerInternalHook } from "openclaw/plugin-sdk/hook-runtime";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { finalizeInboundContext } from "openclaw/plugin-sdk/reply-runtime";
@@ -7,11 +8,13 @@ import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { resolveWebexConversationRoute } from "./conversation-route.js";
 import {
   buildRoomContextNote,
+  buildRoomMemoryNote,
   clearPendingRoomSelection,
   findSharedRoomsWithWorkspace,
   getRoomProjectContext,
   hasPendingRoomSelection,
   resolvePendingRoomSelection,
+  resolveRoomMemoryDir,
   saveRoomFile,
   storePendingRoomSelection,
 } from "./room-workspace.js";
@@ -540,12 +543,13 @@ async function runAgentTurnWithContext(params: {
   });
   if (!route) return;
 
-  // Prepend project context to the user's message
+  // Prepend room memory and project context to the user's message
+  const roomMemoryNote = await buildRoomMemoryNote(msg.roomId).catch(() => null);
   const contextPreamble = roomContextNote
     ? `${roomContextNote}\n[Project files directory: ${roomFilesDir}]\n\n`
     : `[Project: ${roomTitle} — ${fileCount} file(s) in ${roomFilesDir}]\n\n`;
-
-  const bodyForAgent = `${contextPreamble}${msg.text ?? ""}`;
+  const preambleParts = [roomMemoryNote, contextPreamble].filter(Boolean);
+  const bodyForAgent = `${preambleParts.join("\n\n")}${msg.text ?? ""}`;
 
   const firstMedia = mediaResults[0];
   const ctxPayload = finalizeInboundContext({
@@ -689,13 +693,15 @@ async function processWebexMessage(params: {
     if (handled) return;
   }
 
-  // Standard turn: inject room workspace context note for group rooms
+  // Standard turn: inject room workspace context note and room memory (both room types)
   let bodyForAgent = msg.text ?? "";
-  if (msg.roomType === "group") {
-    const contextNote = await buildRoomContextNote(msg.roomId).catch(() => null);
-    if (contextNote) {
-      bodyForAgent = `${contextNote}\n\n${bodyForAgent}`;
-    }
+  const [contextNote, roomMemoryNote] = await Promise.all([
+    msg.roomType === "group" ? buildRoomContextNote(msg.roomId).catch(() => null) : null,
+    buildRoomMemoryNote(msg.roomId).catch(() => null),
+  ]);
+  const preambleParts = [roomMemoryNote, contextNote].filter(Boolean);
+  if (preambleParts.length > 0) {
+    bodyForAgent = `${preambleParts.join("\n\n")}\n\n${bodyForAgent}`;
   }
 
   const firstMedia = mediaResults[0];
@@ -773,5 +779,26 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       clearTimeout(timer);
       resolve();
     });
+  });
+}
+
+// ---- Room-scoped memory write redirect ---------------------------------------
+// Intercept /new and /reset hook events for Webex sessions and redirect the
+// session-memory write target to rooms/<roomId>/memory/ instead of the shared
+// agent workspace. This prevents conversational learnings from leaking across
+// rooms or between users who DM the same agent.
+
+function extractWebexRoomIdFromSessionKey(sessionKey: string): string | null {
+  // Format: agent:<agentId>:webex:direct:<roomId>
+  //         agent:<agentId>:webex:group:<roomId>
+  const match = sessionKey.match(/:webex:(?:direct|group):(.+)$/);
+  return match?.[1] ?? null;
+}
+
+for (const action of ["new", "reset"] as const) {
+  registerInternalHook(`command:${action}`, (event) => {
+    const roomId = extractWebexRoomIdFromSessionKey(event.sessionKey);
+    if (!roomId) return;
+    event.context.memoryDir = resolveRoomMemoryDir(roomId);
   });
 }

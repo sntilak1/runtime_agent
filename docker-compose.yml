@@ -30,6 +30,7 @@ services:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}/extensions:/home/node/.openclaw/extensions
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
+      - /opt/openclaw/workspace-program-management:/home/node/.openclaw/workspace-program-management
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/runtime-CJxvnR47.js:/app/dist/runtime-CJxvnR47.js:ro
       - /opt/openclaw/dist-patches/loader-Z63ex_FC.js:/app/dist/loader-Z63ex_FC.js:ro
@@ -108,6 +109,7 @@ services:
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}:/home/node/.openclaw
       - ${OPENCLAW_CONFIG_DIR:-${HOME:-/tmp}/.openclaw}/extensions:/home/node/.openclaw/extensions
       - ${OPENCLAW_WORKSPACE_DIR:-${HOME:-/tmp}/.openclaw/workspace}:/home/node/.openclaw/workspace
+      - /opt/openclaw/workspace-program-management:/home/node/.openclaw/workspace-program-management
       - openclaw-plugin-runtime-deps:/var/lib/openclaw/plugin-runtime-deps
       - /opt/openclaw/dist-patches/webex-setup-entry.js:/app/dist/extensions/webex/setup-entry.js:ro
       - /opt/openclaw/dist-patches/webex-setup-plugin-api.js:/app/dist/extensions/webex/setup-plugin-api.js:ro

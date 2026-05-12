@@ -43,6 +43,7 @@ services:
       - /opt/openclaw/dist-patches/webex-channel-plugin-api.js:/app/dist/extensions/webex/channel-plugin-api.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-api.js:/app/dist/extensions/webex/runtime-api.js:ro
       - /opt/openclaw/dist-patches/webex-monitor-z4Sqpibn.js:/app/dist/extensions/webex/monitor-z4Sqpibn.js:ro
+      - /opt/openclaw/dist-patches/webex-monitor-C4l1vqHv.js:/app/dist/extensions/webex/monitor-C4l1vqHv.js:ro
       - /opt/openclaw/dist-patches/webex-channel.runtime-CrtcmG6C.js:/app/dist/extensions/webex/channel.runtime-CrtcmG6C.js:ro
       - /opt/openclaw/dist-patches/webex-runtime-3KqqgWO2.js:/app/dist/extensions/webex/runtime-3KqqgWO2.js:ro
       ## Uncomment the lines below to enable sandbox isolation

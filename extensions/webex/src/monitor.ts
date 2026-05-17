@@ -168,11 +168,20 @@ async function runWebexWdmLoop(opts: {
       cleanup();
       resolve();
     });
+    ws.on("open", () => {
+      runtime.log("webex: WDM WebSocket open");
+    });
+    ws.on("pong", () => {
+      runtime.log("webex: WDM pong received");
+    });
     ws.on("error", (err: Error) => {
       cleanup();
       reject(err);
     });
-    ws.on("close", () => resolve());
+    ws.on("close", (code: number, reason: Buffer) => {
+      runtime.log(`webex: WDM WebSocket closed code=${code} reason=${reason}`);
+      resolve();
+    });
     ws.on("message", (raw: Buffer) => {
       let envelope: Record<string, unknown>;
       try {
@@ -182,26 +191,110 @@ async function runWebexWdmLoop(opts: {
       }
       const data = envelope?.data as Record<string, unknown> | undefined;
       const activity = data?.activity as Record<string, unknown> | undefined;
-      if (data?.eventType !== "conversation.activity") return;
-      if (!activity || (activity.verb !== "post" && activity.verb !== "share")) return;
+      const eventType = data?.eventType as string | undefined;
+      const verb = (activity?.verb as string | undefined) ?? "(none)";
+      runtime.log(
+        `webex: WDM event: ${eventType ?? (envelope?.type as string | undefined) ?? "unknown"} verb=${verb}`,
+      );
+      if (eventType !== "conversation.activity") return;
+      if (!activity || (verb !== "post" && verb !== "share")) return;
       const actor = activity.actor as Record<string, unknown> | undefined;
       if (actor?.entryUUID === botPersonId || actor?.id === botPersonId) return;
       const msgId = (activity.id ?? activity.url) as string | undefined;
       if (!msgId) return;
-      const cleanId = msgId.replace(/.*\/messages\//, "");
-      webexGet(`/messages/${encodeURIComponent(cleanId)}`, token)
+      // WDM activity.id is a raw UUID; REST /messages needs the hydra base64 ID.
+      const rawUuid = msgId.replace(/.*\/activities\//, "").replace(/.*\/messages\//, "");
+      const hydraId = /^[0-9a-f-]{36}$/i.test(rawUuid)
+        ? Buffer.from(`ciscospark://us/MESSAGE/${rawUuid}`).toString("base64").replace(/=+$/, "")
+        : rawUuid;
+      // For share verb: REST /messages/<id> sometimes returns a message without files.
+      // Webex fires the WDM event before the file is fully processed (423 Locked window),
+      // so fall back to activity.files or a recent room message list if needed.
+      const resolveMsg = async (): Promise<WebexInboundMessage | null> => {
+        let msg: WebexInboundMessage | null = null;
+        try {
+          msg = (await webexGet(
+            `/messages/${encodeURIComponent(hydraId)}`,
+            token,
+          )) as unknown as WebexInboundMessage;
+        } catch (e) {
+          runtime.log(`webex: share REST fetch failed: ${String(e)}`);
+        }
+        if (verb !== "share") return msg;
+        if (msg?.files && msg.files.length > 0) return msg;
+        // Use file URLs from the WDM activity when the REST message has none
+        const activityFiles =
+          Array.isArray(activity.files) && (activity.files as unknown[]).length > 0
+            ? (activity.files as string[])
+            : null;
+        if (activityFiles) {
+          if (msg) return { ...msg, files: activityFiles };
+          const roomIdRaw =
+            ((activity.target as Record<string, unknown> | undefined)?.id as string | undefined) ??
+            ((activity.target as Record<string, unknown> | undefined)?.url as string | undefined)
+              ?.split("/")
+              .pop();
+          if (roomIdRaw) {
+            return {
+              id: hydraId,
+              roomId: roomIdRaw,
+              roomType: "group",
+              personId: ((actor?.entryUUID ?? actor?.id) as string) ?? "",
+              personEmail:
+                ((actor as Record<string, unknown> | undefined)?.emailAddress as string) ??
+                ((actor as Record<string, unknown> | undefined)?.email as string) ??
+                "",
+              text:
+                ((activity.object as Record<string, unknown> | undefined)?.displayName as string) ??
+                "",
+              files: activityFiles,
+              mentionedPeople: (activity.mentionedPeople as string[] | undefined) ?? [],
+            };
+          }
+        }
+        // Last resort: list recent room messages to find the file-bearing one
+        const targetRoomUuid =
+          ((activity.target as Record<string, unknown> | undefined)?.id as string | undefined) ??
+          ((activity.target as Record<string, unknown> | undefined)?.url as string | undefined)
+            ?.split("/")
+            .pop();
+        const targetRoomHydra =
+          targetRoomUuid && /^[0-9a-f-]{36}$/i.test(targetRoomUuid)
+            ? Buffer.from(`ciscospark://us/ROOM/${targetRoomUuid}`)
+                .toString("base64")
+                .replace(/=+$/, "")
+            : targetRoomUuid;
+        const roomId = msg?.roomId ?? targetRoomHydra;
+        if (!roomId) return msg;
+        try {
+          const recent = (await webexGet(
+            `/messages?roomId=${encodeURIComponent(roomId)}&max=10`,
+            token,
+          )) as unknown as { items?: WebexInboundMessage[] };
+          const cutoff = Date.now() - 5 * 60 * 1000;
+          const senderPersonId = msg?.personId;
+          const fileMsg = (recent.items ?? []).find(
+            (m) =>
+              m.files &&
+              m.files.length > 0 &&
+              m.personId !== botPersonId &&
+              (!senderPersonId || m.personId === senderPersonId) &&
+              new Date(m.created ?? "").getTime() > cutoff,
+          );
+          if (fileMsg) return { ...fileMsg, text: fileMsg.text ?? msg?.text ?? "" };
+        } catch {}
+        return msg;
+      };
+      void resolveMsg()
         .then((msg) => {
-          const inbound = msg as unknown as WebexInboundMessage;
-          if (!inbound || inbound.personId === botPersonId) return;
-          void processWebexMessage({ cfg, accountId, runtime, msg: inbound, botPersonId }).catch(
+          if (!msg || msg.personId === botPersonId) return;
+          void processWebexMessage({ cfg, accountId, runtime, msg, botPersonId }).catch(
             (err: unknown) => {
               runtime.error(`webex: dispatch error: ${String(err)}`);
             },
           );
         })
-        .catch((err: unknown) => {
-          runtime.error(`webex: GET /messages failed: ${String(err)}`);
-        });
+        .catch(() => {});
     });
   });
 }
@@ -216,8 +309,9 @@ type WebexMediaResult = {
   buffer?: Buffer;
 };
 
-// Webex file content may return 423 (Locked) while being processed/scanned.
-const WEBEX_FILE_RETRY_DELAYS_MS = [2000, 4000, 8000];
+// Webex file content may return 423 (Locked) while being processed/encrypted.
+// Large files (7–30 MB) can take 30–60 s to unlock; retry for up to ~2.5 min.
+const WEBEX_FILE_RETRY_DELAYS_MS = [2000, 4000, 8000, 15000, 30000, 45000, 60000];
 
 async function fetchWebexFileWithRetry(
   url: string,
@@ -235,15 +329,17 @@ async function fetchWebexFileWithRetry(
       runtime.error(`webex: file fetch error: ${String(err)}`);
       return null;
     }
-    if (res.status === 423) {
-      continue;
-    }
+    runtime.log(
+      `webex: file fetch attempt=${attempt} status=${res.status} type=${res.headers.get("content-type")} size=${res.headers.get("content-length")}`,
+    );
+    if (res.status === 423) continue;
     if (!res.ok) {
       runtime.error(`webex: file fetch HTTP ${res.status}`);
       return null;
     }
     return res;
   }
+  runtime.error(`webex: file fetch exhausted retries for ${url}`);
   return null;
 }
 
@@ -262,12 +358,22 @@ const WEBEX_INBOUND_ALLOWED_EXTENSIONS = new Set([
   ".txt",
   ".csv",
   ".rtf",
+  ".md",
   ".jpg",
   ".jpeg",
   ".png",
   ".gif",
   ".webp",
   ".svg",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".html",
+  ".htm",
+  ".json",
+  ".xml",
+  ".yaml",
+  ".yml",
 ]);
 
 function resolveInboundContentType(
@@ -339,9 +445,15 @@ async function downloadWebexFile(
   let buffer: Buffer;
   try {
     const bytes = await res.arrayBuffer();
-    if (bytes.byteLength > WEBEX_INBOUND_MAX_BYTES) return null;
+    if (bytes.byteLength > WEBEX_INBOUND_MAX_BYTES) {
+      runtime.log(
+        `webex: skipping file — too large (${bytes.byteLength} bytes), filename: ${originalFilename ?? "(none)"}`,
+      );
+      return null;
+    }
     buffer = Buffer.from(bytes);
-  } catch {
+  } catch (err) {
+    runtime.error(`webex: file read error: ${String(err)}`);
     return null;
   }
 
@@ -353,13 +465,17 @@ async function downloadWebexFile(
       WEBEX_INBOUND_MAX_BYTES,
       originalFilename,
     );
+    runtime.log(
+      `webex: saved inbound file: ${originalFilename ?? "(none)"} (${buffer.byteLength} bytes, ${resolvedContentType})`,
+    );
     return {
       path: saved.path,
       contentType: saved.contentType ?? resolvedContentType,
       originalFilename,
       buffer,
     };
-  } catch {
+  } catch (err) {
+    runtime.error(`webex: saveMediaBuffer error: ${String(err)}`);
     return null;
   }
 }

@@ -42,6 +42,20 @@ export const WEBEX_ALLOWED_MIME_PREFIXES = [
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.",
   "application/vnd.oasis.opendocument.",
+  // Text formats (plain, html, csv, markdown, etc.)
+  "text/",
+  // Archives — Webex serves ZIPs as application/x-zip-compressed
+  "application/zip",
+  "application/x-zip",
+  "application/x-zip-compressed",
+  "application/x-compressed",
+  "application/gzip",
+  "application/x-tar",
+  // JSON / XML
+  "application/json",
+  "application/xml",
+  // Generic binary (fallback for unknown types allowed by extension)
+  "application/octet-stream",
 ];
 
 export function isWebexAllowedMime(contentType: string | undefined): boolean {

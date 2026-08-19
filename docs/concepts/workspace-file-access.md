@@ -126,8 +126,8 @@ Because file-write restrictions are behavioral (not OS-enforced), state them exp
 
 ## Related
 
-- [Agent workspace](/concepts/agent-workspace) — workspace file layout and backup
-- [Slash commands](/tools/slash-commands) — full command reference with owner/authorized gates
-- [Groups](/channels/groups) — group access control, tool restrictions by sender
-- [Sandboxing](/gateway/sandboxing) — hard OS-level workspace isolation for untrusted sessions
-- [Gateway configuration](/gateway/config-agents) — `agents.defaults` and tool policy config
+- [Agent workspace](https://docs.openclaw.ai/concepts/agent-workspace) — workspace file layout and backup
+- [Slash commands](https://docs.openclaw.ai/tools/slash-commands) — full command reference with owner/authorized gates
+- [Groups](https://docs.openclaw.ai/channels/groups) — group access control, tool restrictions by sender
+- [Sandboxing](https://docs.openclaw.ai/gateway/sandboxing) — hard OS-level workspace isolation for untrusted sessions
+- [Gateway configuration](https://docs.openclaw.ai/gateway/config-agents) — `agents.defaults` and tool policy config

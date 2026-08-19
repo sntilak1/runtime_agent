@@ -317,6 +317,10 @@
       "destination": "/concepts/agent-workspace"
     },
     {
+      "source": "/workspace-file-access",
+      "destination": "/concepts/workspace-file-access"
+    },
+    {
       "source": "/android",
       "destination": "/platforms/android"
     },
@@ -1118,6 +1122,7 @@
                   "concepts/context",
                   "concepts/context-engine",
                   "concepts/agent-workspace",
+                  "concepts/workspace-file-access",
                   "concepts/soul",
                   "concepts/oauth",
                   "start/bootstrapping",
